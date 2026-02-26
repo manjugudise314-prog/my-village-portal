@@ -5,170 +5,109 @@ import os
 import folium
 from streamlit_folium import st_folium
 from streamlit_option_menu import option_menu
-import base64
 import time
-from datetime import datetime, timedelta
 
-# --------------------------------------------------
-# PAGE CONFIG
-# --------------------------------------------------
 st.set_page_config(page_title="My Village Digital Portal", page_icon="🏡", layout="wide")
 BASE_DIR = Path(__file__).parent
 
-# --------------------------------------------------
-# LANGUAGE SYSTEM
-# --------------------------------------------------
-LANG = {
-    "English":{
-        "welcome":"MY VILLAGE DIGITAL PORTAL WELCOME",
-        "enter":"Enter Portal",
-        "stories":"Today Stories"
-    },
-    "Telugu":{
-        "welcome":"MY VILLAGE DIGITAL PORTAL కు స్వాగతం",
-        "enter":"ప్రవేశించండి",
-        "stories":"ఈ రోజు కథలు"
-    }
-}
 
-if "lang" not in st.session_state:
-    st.session_state.lang="English"
+# ---------------- FILE SETUP (FIXED PATH STORAGE) ----------------
+def ensure_file(file, cols):
+    path = BASE_DIR / file
+    if not path.exists():
+        pd.DataFrame(columns=cols).to_csv(path, index=False)
 
-# --------------------------------------------------
-# PREMIUM STYLE + FOOTER
-# --------------------------------------------------
+
+def load(file):
+    path = BASE_DIR / file
+    if not path.exists():
+        return pd.DataFrame()
+    return pd.read_csv(path)
+
+
+# ---------------- PREMIUM + MOBILE UI ----------------
 st.markdown("""
 <style>
-.stApp {background:#f5f7fa;}
-[data-testid="stSidebar"]{
-background:linear-gradient(#0f2027,#203a43,#2c5364);
+.block-container{max-width:700px;margin:auto;padding-top:1rem;}
+.stApp {background: linear-gradient(135deg,#0f2027,#203a43,#2c5364);color:white;}
+[data-testid="stSidebar"]{background: linear-gradient(#1f4037,#99f2c8);}
+label,p,span {color:white !important;}
+h1,h2,h3 {color:#ffd369;}
+
+.stButton>button {
+background:linear-gradient(90deg,#ff7e5f,#feb47b);
+color:white;border-radius:10px;border:none;
 }
-.footer{
-position:fixed;
-bottom:10px;
+
+/* SLIDER */
+.slider-container{position:relative;width:100%;border-radius:15px;overflow:hidden}
+.slide{display:none;width:100%;animation:fade 1.5s}
+@keyframes fade {from{opacity:.4} to{opacity:1}}
+.slider-text{
+position:absolute;top:10px;left:20px;
+background:rgba(0,0,0,0.6);
+padding:10px 20px;border-radius:10px;color:white;font-size:22px;
+}
+
+/* ANNOUNCEMENT TICKER */
+.ticker{
 width:100%;
-text-align:center;
-color:gray;
+overflow:hidden;
+white-space:nowrap;
+box-sizing:border-box;
+}
+.ticker span{
+display:inline-block;
+padding-left:100%;
+animation:ticker 15s linear infinite;
+font-size:18px;
+color:#ffd369;
+}
+@keyframes ticker{
+0%{transform:translate(0,0);}
+100%{transform:translate(-100%,0);}
 }
 </style>
-<div class="footer">Developed by ANJI</div>
 """, unsafe_allow_html=True)
 
-# --------------------------------------------------
-# CREATE FILE IF NOT EXISTS
-# --------------------------------------------------
-def ensure_file(file, columns):
-    if not os.path.exists(file):
-        pd.DataFrame(columns=columns).to_csv(file, index=False)
 
-ensure_file("families.csv", ["Family_ID","Head_of_Family","Address"])
-ensure_file("pupils.csv", ["Name","Family_ID","Relation","Age","Voter_ID"])
-ensure_file("places.csv", ["Name","Type","Latitude","Longitude"])
-ensure_file("team.csv", ["Name","Role"])
-ensure_file("wards.csv", ["Ward","Start","End"])
-ensure_file("stories.csv", ["User","Text","Image","Time"])
+# ---------------- CREATE FILES ----------------
+ensure_file("families.csv",["Family_ID","Head_of_Family","Address"])
+ensure_file("pupils.csv",["Name","Family_ID","Relation","Age","Voter_ID"])
+ensure_file("places.csv",["Name","Type","Latitude","Longitude"])
+ensure_file("team.csv",["Name","Role"])
+ensure_file("gallery.csv",["Image"])
+ensure_file("dashboard_media.csv",["Image","Caption"])
+ensure_file("leagues.csv",["Sport","Season","Winner","Runner"])
+ensure_file("ward_ranges.csv",["Ward","Start","End"])
 
-# --------------------------------------------------
-# LOAD DATA
-# --------------------------------------------------
-def load(file):
-    return pd.read_csv(file)
 
-families = load("families.csv")
-pupils = load("pupils.csv")
-places = load("places.csv")
-team = load("team.csv")
-wards = load("wards.csv")
-stories = load("stories.csv")
-
-# --------------------------------------------------
-# AUTO DELETE OLD STORIES (24 HRS)
-# --------------------------------------------------
-if not stories.empty:
-    stories["Time"]=pd.to_datetime(stories["Time"],errors="coerce")
-    stories=stories[stories["Time"]>datetime.now()-timedelta(hours=24)]
-    stories.to_csv("stories.csv",index=False)
-
-# --------------------------------------------------
-# WARD DETECTION
-# --------------------------------------------------
-def get_ward(voter_id):
-
-    if wards.empty:
+# ---------------- REAL WARD DETECTION ----------------
+def detect_ward(voter_id):
+    if pd.isna(voter_id):
         return "Unknown"
 
-    start_col=None
-    end_col=None
+    voter_id=str(voter_id)
 
-    for col in wards.columns:
-        if col.lower() in ["start","start_id","from"]:
-            start_col=col
-        if col.lower() in ["end","end_id","to"]:
-            end_col=col
-
-    if start_col is None or end_col is None:
+    # extract numbers from voter id
+    number="".join(filter(str.isdigit, voter_id))
+    if number=="":
         return "Unknown"
 
-    try:
-        voter_id=int(voter_id)
-    except:
-        return "Unknown"
+    number=int(number)
+    ward_ranges=load("ward_ranges.csv")
 
-    for _,row in wards.iterrows():
+    for _,row in ward_ranges.iterrows():
         try:
-            if int(row[start_col])<=voter_id<=int(row[end_col]):
-                return row["Ward"]
+            if int(row["Start"]) <= number <= int(row["End"]):
+                return int(row["Ward"])
         except:
             pass
 
     return "Unknown"
 
-# --------------------------------------------------
-# WELCOME SCREEN (FIRST INTERFACE)
-# --------------------------------------------------
-if "start" not in st.session_state:
-    st.session_state.start=False
 
-if not st.session_state.start:
-
-    # optional village background image
-    try:
-        img=BASE_DIR/"photos"/"village.jpg"
-        if img.exists():
-            with open(img,"rb") as f:
-                data=base64.b64encode(f.read()).decode()
-
-            st.markdown(f"""
-            <style>
-            .stApp {{
-            background-image:url("data:image/jpg;base64,{data}");
-            background-size:cover;
-            }}
-            </style>
-            """,unsafe_allow_html=True)
-    except:
-        pass
-
-    st.session_state.lang=st.selectbox("Language / భాష",["English","Telugu"])
-    L=LANG[st.session_state.lang]
-
-    st.markdown(f"<h1 style='text-align:center'>{L['welcome']}</h1>",unsafe_allow_html=True)
-
-    st.markdown("""
-    <marquee style='font-size:28px;color:green'>
-    SARVAPOOR KOTHAPALLE VILLAGE DIGITAL SERVICE
-    </marquee>
-    """,unsafe_allow_html=True)
-
-    if st.button(L["enter"]):
-        st.session_state.start=True
-        st.rerun()
-
-    st.stop()
-
-# --------------------------------------------------
-# LOGIN
-# --------------------------------------------------
+# ---------------- LOGIN ----------------
 if "role" not in st.session_state:
     st.session_state.role=None
 
@@ -176,163 +115,233 @@ st.sidebar.title("🔐 Login")
 login_type=st.sidebar.selectbox("Login As",["User","Admin"])
 
 if login_type=="User":
+    name=st.sidebar.text_input("Enter Name")
     if st.sidebar.button("Enter"):
         st.session_state.role="user"
+        st.session_state.username=name
 
 if login_type=="Admin":
+    aid=st.sidebar.text_input("Admin ID")
     pwd=st.sidebar.text_input("Password",type="password")
     if st.sidebar.button("Login"):
-        if pwd=="admin123":
+        if aid=="admin" and pwd=="admin123":
             st.session_state.role="admin"
+            st.session_state.username="Administrator"
         else:
-            st.sidebar.error("Wrong password")
+            st.sidebar.error("Wrong Credentials")
 
 if st.session_state.role is None:
     st.stop()
 
-# --------------------------------------------------
-# PREMIUM MENU (YOUR ORIGINAL + STORIES ADDED)
-# --------------------------------------------------
+
+# ---------------- HEADER ----------------
+st.markdown(f"""
+<div style='padding:15px;border-radius:10px;background:linear-gradient(90deg,#4facfe,#00f2fe);text-align:center'>
+<h3>👋 Welcome {st.session_state.username}</h3>
+</div>
+""",unsafe_allow_html=True)
+
+
+# ANNOUNCEMENT
+st.markdown("""
+<div class="ticker">
+<span>📢 Welcome to Sarvapoor Kothapalle Village Digital Portal • Latest Updates Available • Village Development News</span>
+</div>
+""", unsafe_allow_html=True)
+
+
+# ---------------- MENU ----------------
 with st.sidebar:
     selected=option_menu(
         "Village Portal",
-        ["Dashboard","Families","Pupils","Village Team","Places","Today Stories"],
-        icons=["house-fill","people-fill","person-badge","person-workspace","geo-alt-fill","camera-fill"],
-        default_index=0
+        ["Dashboard","Families","Pupils","Village Team","Places",
+         "Village Leagues","Village Gallery","Dashboard Media","Ward Settings"],
+        icons=["house","people","person","person-workspace","geo",
+               "trophy","image","camera","gear"]
     )
 
-# --------------------------------------------------
+
+# ---------------- LOAD DATA ----------------
+families=load("families.csv")
+pupils=load("pupils.csv")
+places=load("places.csv")
+team=load("team.csv")
+gallery=load("gallery.csv")
+dash_media=load("dashboard_media.csv")
+leagues=load("leagues.csv")
+
+
+# ---------------- FAST SEARCH ----------------
+@st.cache_data
+def prepare_search_data(df):
+    return df.astype(str).apply(lambda x: x.str.lower())
+
+pupils_fast=prepare_search_data(pupils)
+families_fast=prepare_search_data(families)
+places_fast=prepare_search_data(places)
+team_fast=prepare_search_data(team)
+leagues_fast=prepare_search_data(leagues)
+
+
+# ====================================================
 # DASHBOARD
-# --------------------------------------------------
+# ====================================================
 if selected=="Dashboard":
 
-    st.title("🏡SARVAPOOR KOTHAPALLE Village Smart Dashboard")
+    st.title("🏡 Village Dashboard")
+    st.markdown("## Welcome to SARVAPOOR KOTHAPALLE Village Digital Portal")
 
     c1,c2,c3,c4=st.columns(4)
     c1.metric("Families",len(families))
     c2.metric("Members",len(pupils))
-    c3.metric("Locations",len(places))
-    c4.metric("Team Members",len(team))
+    c3.metric("Places",len(places))
+    c4.metric("Team",len(team))
 
     st.divider()
 
-    # SEARCH
-    st.subheader("🔎 Smart Search (Pupil Details)")
-    search=st.text_input("Enter Pupil Name")
+    st.subheader("🔍 Smart Search")
 
-    if search:
-        result=pupils[pupils["Name"].astype(str).str.contains(search,case=False)]
+    search_pool=pd.concat([
+        pupils["Name"],
+        families["Head_of_Family"],
+        places["Name"],
+        team["Name"],
+        leagues["Sport"]
+    ]).dropna().unique()
 
-        if not result.empty:
-            for _,row in result.iterrows():
+    query=st.selectbox("Search anything",[""]+list(search_pool))
 
-                fam=families[families["Family_ID"]==row["Family_ID"]]
-                ward_detected=get_ward(row.get("Voter_ID"))
+    if query:
+        q=query.lower()
+        found=False
 
-                col1,col2=st.columns(2)
+        person=pupils[pupils_fast.apply(lambda x:x.str.contains(q)).any(axis=1)]
+        if not person.empty:
+            st.success("Person Found")
+            st.dataframe(person)
 
-                with col1:
-                    st.success("Pupil Details")
-                    st.write("Name:",row["Name"])
-                    st.write("Relation:",row["Relation"])
-                    st.write("Age:",row["Age"])
-                    st.write("Voter ID:",row.get("Voter_ID"))
-                    st.write("Ward:",ward_detected)
+            voter=person.iloc[0]["Voter_ID"]
+            ward=detect_ward(voter)
 
-                with col2:
-                    if not fam.empty:
-                        st.success("Family Details")
-                        st.write("Family Head:",fam.iloc[0]["Head_of_Family"])
-                        st.write("Address:",fam.iloc[0]["Address"])
+            st.subheader("Detected Ward")
+            st.info(f"Ward: {ward}")
 
-                st.subheader("👨‍👩‍👧 Full Family Members")
-                family_members=pupils[pupils["Family_ID"]==row["Family_ID"]]
-                st.dataframe(family_members)
+            fid=person.iloc[0]["Family_ID"]
+            st.subheader("Family Head Details")
+            st.dataframe(families[families["Family_ID"]==fid])
 
-        else:
-            st.warning("No record found")
+            st.subheader("Full Family Members")
+            st.dataframe(pupils[pupils["Family_ID"]==fid])
+
+            found=True
+
+        if query.isdigit():
+            ward_number=int(query)
+            pupils["Detected_Ward"]=pupils["Voter_ID"].apply(detect_ward)
+            ward_members=pupils[pupils["Detected_Ward"]==ward_number]
+
+            if not ward_members.empty:
+                st.success(f"Ward {ward_number} Members")
+                st.dataframe(ward_members)
+                found=True
+
+        if not found:
+            st.error("Data Not Found")
 
     st.divider()
 
-    # MAP
     st.subheader("🗺 Village Map")
     m=folium.Map(location=[18.678054,78.961130],zoom_start=15)
+    folium.Marker([18.678054,78.961130],popup="SARVAPOOR KOTHAPALLE").add_to(m)
+    st_folium(m,width=700)
 
-    for _,row in places.iterrows():
-        try:
-            folium.Marker(
-                [float(row["Latitude"]),float(row["Longitude"])],
-                popup=f"{row['Name']} ({row['Type']})"
-            ).add_to(m)
-        except:
-            pass
 
-    st_folium(m,width=900)
+# ====================================================
+# ADMIN CONTROL
+# ====================================================
+def admin_controls(df,file,cols,title):
+    st.header(title)
+    st.dataframe(df)
 
-# --------------------------------------------------
-# FAMILIES
-# --------------------------------------------------
+    if st.session_state.role!="admin":
+        return
+
+    file_path=BASE_DIR / file
+
+    st.markdown("### Admin Panel")
+    tab1,tab2,tab3=st.tabs(["Add","Edit","Delete"])
+
+    with tab1:
+        data={}
+        for c in cols:
+            data[c]=st.text_input(f"Enter {c}",key=f"{title}_{c}")
+        if st.button("Add Record",key=f"{title}_add"):
+            pd.DataFrame([data]).to_csv(file_path,mode="a",header=not file_path.exists(),index=False)
+            st.success("Added — Refresh")
+
+    with tab2:
+        if len(df)>0:
+            idx=st.number_input("Row",0,len(df)-1,key=f"{title}_row")
+            new={}
+            for c in cols:
+                new[c]=st.text_input(f"New {c}",df.iloc[idx][c],key=f"{title}_edit_{c}")
+            if st.button("Update Record",key=f"{title}_update"):
+                df.loc[idx]=list(new.values())
+                df.to_csv(file_path,index=False)
+                st.success("Updated")
+
+    with tab3:
+        if len(df)>0:
+            d=st.number_input("Delete Row",0,len(df)-1,key=f"{title}_delete_row")
+            if st.button("Delete Record",key=f"{title}_delete"):
+                df=df.drop(d)
+                df.to_csv(file_path,index=False)
+                st.success("Deleted")
+
+
 if selected=="Families":
-    st.header("Families")
-    st.dataframe(families)
+    admin_controls(families,"families.csv",["Family_ID","Head_of_Family","Address"],"Families")
 
-# --------------------------------------------------
-# PUPILS
-# --------------------------------------------------
 if selected=="Pupils":
-    st.header("Pupils")
-    st.dataframe(pupils)
+    admin_controls(pupils,"pupils.csv",["Name","Family_ID","Relation","Age","Voter_ID"],"Pupils")
 
-# --------------------------------------------------
-# TEAM
-# --------------------------------------------------
 if selected=="Village Team":
-    st.header("Village Team")
-    st.dataframe(team)
+    admin_controls(team,"team.csv",["Name","Role"],"Village Team")
 
-# --------------------------------------------------
-# PLACES
-# --------------------------------------------------
 if selected=="Places":
-    st.header("Village Locations")
-    st.dataframe(places)
+    admin_controls(places,"places.csv",["Name","Type","Latitude","Longitude"],"Village Places")
 
-# --------------------------------------------------
-# TODAY STORIES (NEW FEATURE)
-# --------------------------------------------------
-if selected=="Today Stories":
+if selected=="Village Leagues":
+    admin_controls(leagues,"leagues.csv",["Sport","Season","Winner","Runner"],"Village Leagues")
 
-    st.header("📸 Today Stories (Auto delete after 24 hrs)")
 
-    user=st.text_input("Your Name")
-    text=st.text_input("Write Update")
-    img=st.file_uploader("Upload Photo",type=["jpg","png","jpeg"])
+# ====================================================
+# WARD SETTINGS
+# ====================================================
+if selected=="Ward Settings":
 
-    if st.button("Post Story"):
+    ward_ranges=load("ward_ranges.csv")
 
-        img_path=""
-        if img:
-            os.makedirs("story_images",exist_ok=True)
-            img_path=f"story_images/{time.time()}.jpg"
-            with open(img_path,"wb") as f:
-                f.write(img.read())
+    st.header("Ward Range Management")
+    st.dataframe(ward_ranges)
 
-        new=pd.DataFrame([[user,text,img_path,datetime.now()]],
-                         columns=["User","Text","Image","Time"])
+    if st.session_state.role!="admin":
+        st.warning("Only admin can manage ward ranges")
+        st.stop()
 
-        new.to_csv("stories.csv",mode="a",header=False,index=False)
-        st.success("Story Posted")
+    ward=st.number_input("Ward Number",step=1)
+    start=st.number_input("Start Range",step=1)
+    end=st.number_input("End Range",step=1)
 
-    st.subheader("Active Stories")
+    if st.button("Save Range"):
+        new=pd.DataFrame([[ward,start,end]],columns=["Ward","Start","End"])
+        ward_ranges=pd.concat([ward_ranges,new],ignore_index=True)
+        ward_ranges.to_csv(BASE_DIR/"ward_ranges.csv",index=False)
+        st.success("Saved")
 
-    stories=pd.read_csv("stories.csv")
-    if not stories.empty:
-        stories["Time"]=pd.to_datetime(stories["Time"],errors="coerce")
-        active=stories[stories["Time"]>datetime.now()-timedelta(hours=24)]
-
-        for _,r in active.iterrows():
-            st.write("User:",r["User"])
-            st.write(r["Text"])
-            if r["Image"] and os.path.exists(r["Image"]):
-                st.image(r["Image"],width=300)
-            st.divider()
+    if len(ward_ranges)>0:
+        idx=st.number_input("Row to Delete",0,len(ward_ranges)-1)
+        if st.button("Delete Range"):
+            ward_ranges.drop(idx,inplace=True)
+            ward_ranges.to_csv(BASE_DIR/"ward_ranges.csv",index=False)
+            st.success("Deleted")
