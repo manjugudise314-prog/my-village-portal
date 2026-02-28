@@ -1,23 +1,17 @@
 {
-  "name": "My Village App",
-  "short_name": "Village",
-  "start_url": "/",
-  "display": "standalone",
-  "background_color": "#ffffff",
-  "theme_color": "#0f2027",
-  "orientation": "portrait",
-  "description": "Sarvapoor Kothapalle Village Digital Portal",
-
+  "short_name": "VILLAGE",
+  "name": "MY VILLAGE PORTAL",
   "icons": [
     {
-      "src": "icon-192.png",
-      "sizes": "192x192",
-      "type": "image/png"
-    },
-    {
-      "src": "icon-512.png",
-      "sizes": "512x512",
-      "type": "image/png"
+      "src": "favicon_512.png",
+      "type": "image/png",
+      "sizes": "512x512"
     }
-  ]
+  ],
+  "start_url": "/",
+  "display": "standalone",
+  "theme_color": "#daee0f",
+  "background_color": "#23ab1b",
+  "id": "ANJI",
+  "description": "\"Official digital portal of Sarvapoor Kothapalle village. Access village services, announcements, events, certificates, and important information online.\""
 }
