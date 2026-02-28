@@ -1,11 +1,25 @@
 import streamlit as st
 import pandas as pd
 from pathlib import Path
+import os
 import folium
 from streamlit_folium import st_folium
 from streamlit_option_menu import option_menu
+import time
 
 st.set_page_config(page_title="My Village Digital Portal", page_icon="🏡", layout="wide")
+
+# ✅ PWA SUPPORT ADDED (DO NOT MOVE THIS)
+st.markdown("""
+<link rel="manifest" href="/manifest.json">
+<script>
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('/service-worker.js');
+}
+</script>
+""", unsafe_allow_html=True)
+
+BASE_DIR = Path(__file__).parent
 
 BASE_DIR = Path(__file__).parent
 
